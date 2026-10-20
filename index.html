@@ -1,1 +1,233 @@
-/.netlify/functions/ai
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipMaker IA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#F3F0FF;--ink:#1E1B2E;--muted:#6B6785;--accent:#E5195F;--card:#fff;--line:#D9D3F2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.5}
+  main{max-width:560px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:2.2rem;line-height:1.05;margin:8px 0 6px;font-weight:800}
+  .sub{color:var(--muted);margin:0 0 24px}
+  label{display:block;font-weight:600;margin:16px 0 6px}
+  textarea,select{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);font:inherit;color:var(--ink)}
+  textarea{min-height:90px;resize:vertical}
+  button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer;background:var(--accent);color:#fff;width:100%;margin-top:18px}
+  button.alt{background:var(--ink)}
+  button:disabled{opacity:.5;cursor:wait}
+  button:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #2A6BFF;outline-offset:2px}
+  .row{display:flex;gap:10px}
+  .row>div{flex:1}
+  #status{margin-top:14px;color:var(--muted);min-height:1.4em}
+  #status.err{color:#B00020}
+  section{margin-top:28px}
+  h2{font-size:1.3rem;margin:0 0 4px}
+  .scene{border-left:4px solid var(--accent);padding:6px 0 6px 12px;margin:14px 0}
+  .scene b{display:block}
+  .scene small{color:var(--muted)}
+  .tags{color:#2A6BFF;font-weight:600}
+  canvas{display:block;width:100%;max-width:300px;margin:16px auto 0;border-radius:14px;background:#000}
+  video{display:block;width:100%;max-width:300px;margin:16px auto 0;border-radius:14px}
+  a.dl{display:block;text-align:center;margin-top:12px;font-weight:600;color:var(--accent)}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+  <h1>ClipMaker IA</h1>
+  <p class="sub">Décris ton idée. L'IA écrit le script et fabrique la vidéo verticale.</p>
+
+  <label for="topic">Sujet de ta vidéo</label>
+  <textarea id="topic" placeholder="Ex : 3 erreurs de débutant en trading forex"></textarea>
+
+  <div class="row">
+    <div>
+      <label for="style">Style</label>
+      <select id="style">
+        <option>Éducatif</option>
+        <option>Motivation</option>
+        <option>Humour</option>
+        <option>Storytelling</option>
+      </select>
+    </div>
+    <div>
+      <label for="seconds">Durée</label>
+      <select id="seconds">
+        <option value="15">15 s</option>
+        <option value="30">30 s</option>
+      </select>
+    </div>
+  </div>
+
+  <button id="go">Écrire le script</button>
+  <div id="status" role="status"></div>
+
+  <section id="result" hidden>
+    <h2 id="title"></h2>
+    <div id="scenes"></div>
+    <p id="caption"></p>
+    <p class="tags" id="tags"></p>
+
+    <button class="alt" id="voice">Écouter la voix</button>
+    <button id="make">Créer la vidéo</button>
+    <canvas id="cv" width="540" height="960" aria-label="Aperçu de la vidéo"></canvas>
+    <div id="out"></div>
+  </section>
+</main>
+
+<script>
+// Adresse de la fonction Netlify (rien à changer)
+const WORKER_URL = "/.netlify/functions/ai";
+
+const $ = id => document.getElementById(id);
+let script = null;
+
+function setStatus(msg, isErr = false) {
+  $("status").textContent = msg;
+  $("status").className = isErr ? "err" : "";
+}
+
+// ---------- Étape 1 : script généré par l'IA ----------
+$("go").onclick = async () => {
+  const topic = $("topic").value.trim();
+  if (!topic) return setStatus("Écris d'abord un sujet.", true);
+  $("go").disabled = true;
+  setStatus("L'IA écrit ton script…");
+  try {
+    const r = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, style: $("style").value, seconds: Number($("seconds").value) })
+    });
+    const data = await r.json();
+    if (data.error || !Array.isArray(data.scenes)) throw new Error(data.error || "Réponse invalide");
+    script = data;
+    render();
+    setStatus("Script prêt.");
+  } catch (e) {
+    setStatus("Erreur : " + e.message + ". Vérifie l'adresse du Worker et ta clé API.", true);
+  }
+  $("go").disabled = false;
+};
+
+function render() {
+  $("result").hidden = false;
+  $("title").textContent = script.title || "Ta vidéo";
+  $("scenes").innerHTML = "";
+  script.scenes.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.className = "scene";
+    const b = document.createElement("b");
+    b.textContent = s.text;
+    const sm = document.createElement("small");
+    sm.textContent = "Scène " + (i + 1) + " · " + (s.seconds || 4) + " s · « " + s.voice + " »";
+    d.append(b, sm);
+    $("scenes").append(d);
+  });
+  $("caption").textContent = script.caption || "";
+  $("tags").textContent = (script.hashtags || []).join(" ");
+  drawFrame(script.scenes[0], 0.5, 0, script.scenes.length, 0);
+  $("out").innerHTML = "";
+}
+
+// ---------- Voix off (lecture dans le navigateur) ----------
+$("voice").onclick = () => {
+  speechSynthesis.cancel();
+  script.scenes.forEach(s => {
+    const u = new SpeechSynthesisUtterance(s.voice);
+    u.lang = "fr-FR";
+    speechSynthesis.speak(u);
+  });
+};
+
+// ---------- Étape 2 : dessin de la vidéo ----------
+const PALETTES = [["#E5195F", "#6A11CB"], ["#2A6BFF", "#00C2A8"], ["#FF8A00", "#E5195F"], ["#6A11CB", "#2A6BFF"]];
+const cv = $("cv"), ctx = cv.getContext("2d");
+
+function wrapLines(text, maxW) {
+  const words = text.split(" "), lines = [];
+  let line = "";
+  for (const w of words) {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawFrame(scene, p, idx, total, globalP) {
+  const [c1, c2] = PALETTES[idx % PALETTES.length];
+  const g = ctx.createLinearGradient(0, 0, 540, 960);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 540, 960);
+
+  // texte : entre en grandissant, reste lisible
+  const ease = Math.min(1, p * 5);
+  const scale = 0.85 + 0.15 * (1 - Math.pow(1 - ease, 3));
+  ctx.save();
+  ctx.globalAlpha = ease;
+  ctx.translate(270, 480);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "800 54px 'Bricolage Grotesque', Arial, sans-serif";
+  const lines = wrapLines(scene.text, 440);
+  const lh = 66;
+  lines.forEach((l, i) => ctx.fillText(l, 0, (i - (lines.length - 1) / 2) * lh));
+  ctx.restore();
+
+  // barre de progression globale
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.fillRect(30, 40, 480, 6);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(30, 40, 480 * globalP, 6);
+}
+
+// ---------- Étape 3 : enregistrement en fichier vidéo ----------
+$("make").onclick = async () => {
+  if (!window.MediaRecorder) return setStatus("Ton navigateur ne gère pas l'enregistrement vidéo. Utilise Chrome.", true);
+  $("make").disabled = true;
+  setStatus("Création de la vidéo… reste sur cette page.");
+  $("out").innerHTML = "";
+
+  const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
+  const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: 4000000 });
+  const chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const done = new Promise(res => (rec.onstop = res));
+  rec.start();
+
+  const total = script.scenes.reduce((a, s) => a + (s.seconds || 4), 0);
+  let elapsed = 0;
+  for (let i = 0; i < script.scenes.length; i++) {
+    const s = script.scenes[i], dur = (s.seconds || 4) * 1000, t0 = performance.now();
+    await new Promise(res => {
+      const frame = now => {
+        const p = Math.min(1, (now - t0) / dur);
+        drawFrame(s, p, i, script.scenes.length, (elapsed + p * (s.seconds || 4)) / total);
+        p < 1 ? requestAnimationFrame(frame) : res();
+      };
+      requestAnimationFrame(frame);
+    });
+    elapsed += s.seconds || 4;
+  }
+  rec.stop();
+  await done;
+
+  const url = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
+  $("out").innerHTML = '<video controls playsinline src="' + url + '"></video>' +
+    '<a class="dl" download="clip-tiktok.webm" href="' + url + '">Télécharger la vidéo</a>';
+  setStatus("Vidéo prête.");
+  $("make").disabled = false;
+};
+</script>
+</body>
+  </html>
+  
