@@ -23,7 +23,7 @@ Réponds UNIQUEMENT avec du JSON valide, sans texte autour, de cette forme :
 "scenes":[{"text":"texte écran, 8 mots max","voice":"phrase dite à voix haute","seconds":4}]}
 Règles : exactement ${nb} scènes, la première est un hook très accrocheur, la dernière un appel à l'action, la somme des "seconds" vaut environ ${seconds}.`;
 
-    const model = "gemini-2.5-flash"; // vérifie le nom du modèle gratuit dans Google AI Studio
+    const model = "gemini-3.1-flash-lite"; // vérifie le nom du modèle gratuit dans Google AI Studio
     const key = Netlify.env.get("GEMINI_KEY");
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
